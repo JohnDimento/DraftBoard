@@ -104,18 +104,10 @@ export default function LiveDraft() {
         .sort((a, b) => a.order - b.order)
     : [];
 
-  // Logic to determine which team is on the clock
+  // Logic to determine which team is on the clock (linear draft)
   useEffect(() => {
-    // Simple snake draft logic
-    const round = Math.ceil(pickCounter / teams.length);
-    const pickInRound = pickCounter - (round - 1) * teams.length;
-    
-    // If odd round, go forward; if even round, go backward
-    const teamOnClock = round % 2 === 1 
-      ? pickInRound
-      : teams.length - pickInRound + 1;
-    
-    setSelectedTeamId(teamOnClock);
+    const pickInRound = pickCounter - (Math.ceil(pickCounter / teams.length) - 1) * teams.length;
+    setSelectedTeamId(pickInRound);
   }, [pickCounter, teams.length]);
 
   // Draft a player
@@ -251,23 +243,39 @@ export default function LiveDraft() {
       round.picks.forEach(pick => {
         const isPicked = draftHistory.some(draft => draft.pickNumber === pick.pick);
         
-        // If initial owner is this team
-        if (pick.teamId === teamId && !isPicked) {
-          const isTradedAway = fromTeamId === teamId && fromPickNumbers.includes(pick.pick);
-          
+        // Skip if already drafted
+        if (isPicked) return;
+        
+        // Check if original team and not permanently traded
+        const isOriginallyOwned = pick.originalTeamId === teamId;
+        const isActuallyOwned = pick.teamId === teamId;
+        
+        // Check if being traded in dialog
+        const isBeingTradedAway = fromTeamId === teamId && fromPickNumbers.includes(pick.pick);
+        const isBeingTradedFor = toTeamId === teamId && toPickNumbers.includes(pick.pick);
+        
+        // Original team's pick that they still own (or being considered for trade)
+        if (isOriginallyOwned && isActuallyOwned) {
           picks.push({
             round: pick.round,
             pick: pick.pick,
-            status: isTradedAway ? 'traded-away' : 'owned'
+            status: isBeingTradedAway ? 'traded-away' : 'owned'
           });
         }
-        
-        // If traded to this team
-        if (toTeamId === teamId && fromPickNumbers.includes(pick.pick) && !isPicked) {
+        // Someone else's pick that this team acquired (or being considered to acquire)
+        else if (!isOriginallyOwned && isActuallyOwned) {
           picks.push({
             round: pick.round,
             pick: pick.pick,
-            status: 'traded-for'
+            status: isBeingTradedAway ? 'traded-away' : 'traded-for'
+          });
+        }
+        // A pick being considered to acquire in current trade dialog
+        else if (isBeingTradedFor) {
+          picks.push({
+            round: pick.round,
+            pick: pick.pick,
+            status: 'trading-for'
           });
         }
       });
@@ -298,10 +306,9 @@ export default function LiveDraft() {
     
     for (let round = 1; round <= numberOfRounds; round++) {
       const picks = [];
-      const isSnakeRound = round % 2 === 0;
       
       for (let i = 1; i <= teams.length; i++) {
-        const teamIndex = isSnakeRound ? teams.length - i + 1 : i;
+        const teamIndex = i;
         const pickNumber = (round - 1) * teams.length + i;
         const team = teams.find(t => t.id === teamIndex);
         
@@ -360,71 +367,108 @@ export default function LiveDraft() {
         pageName="Live Draft Tracker"
       />
       
-      {/* Draft Board */}
+      {/* Draft Controls */}
       <div className="container mx-auto px-4 py-4">
+        <div className="bg-primary/10 rounded-lg mb-4 p-4 flex flex-wrap justify-between items-center">
+          <div className="flex items-center gap-3 mb-2 md:mb-0">
+            <div className="flex items-center">
+              <span className="text-sm font-medium mr-2">On the Clock:</span>
+              <Badge className="font-bold px-4 py-1 bg-primary text-white">
+                {teams.find(t => t.id === selectedTeamId)?.name || `Team ${selectedTeamId}`}
+              </Badge>
+            </div>
+            <div className="flex items-center">
+              <span className="text-sm font-medium mr-2">Pick:</span>
+              <Badge variant="outline" className="px-3 py-1">
+                {pickCounter}
+              </Badge>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={undoLastPick}
+              disabled={draftHistory.length === 0}
+            >
+              <Undo2 className="h-4 w-4 mr-1" />
+              Undo Pick
+            </Button>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <Input
+              type="search"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-40 sm:w-60 text-sm"
+              placeholder="Search players..."
+            />
+            <Select value={filterPosition} onValueChange={setFilterPosition}>
+              <SelectTrigger className="w-32 text-sm">
+                <SelectValue placeholder="All Positions" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Positions</SelectItem>
+                {POSITIONS.map((pos) => (
+                  <SelectItem key={pos} value={pos}>{pos}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        
+        {/* Full Draft Board */}
         <Card className="mb-6">
           <CardHeader className="pb-3">
-            <div className="flex justify-between items-center">
-              <CardTitle className="text-xl">Draft Board</CardTitle>
-              <div className="flex items-center gap-3">
-                <div className="flex items-center">
-                  <span className="text-sm font-medium mr-2">On the Clock:</span>
-                  <Badge className="font-bold px-4 py-1 bg-primary text-white">
-                    {teams.find(t => t.id === selectedTeamId)?.name || `Team ${selectedTeamId}`}
-                  </Badge>
-                </div>
-                <div className="flex items-center">
-                  <span className="text-sm font-medium mr-2">Pick:</span>
-                  <Badge variant="outline" className="px-3 py-1">
-                    {pickCounter}
-                  </Badge>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={undoLastPick}
-                  disabled={draftHistory.length === 0}
-                >
-                  <Undo2 className="h-4 w-4 mr-1" />
-                  Undo Pick
-                </Button>
-              </div>
-            </div>
+            <CardTitle className="text-xl">Draft Board - All Rounds</CardTitle>
           </CardHeader>
           <CardContent>
-            {/* Current Round View */}
-            <div className="grid grid-cols-6 sm:grid-cols-12 gap-2 mb-4">
-              {currentRoundPicks.map((pick) => (
-                <div 
-                  key={pick.pick} 
-                  className={`border rounded-md p-2 text-center ${
-                    pick.isActive ? 'border-primary-600 bg-primary-50 shadow-sm' : 
-                    pick.player ? 'bg-gray-100' : 'bg-white'
-                  }`}
-                >
-                  <div className="text-xs text-gray-500 mb-1">
-                    {pick.round}.{pick.teamId} - {pick.teamName}
-                  </div>
-                  {pick.player ? (
-                    <div>
-                      <span className={`inline-block w-6 text-center text-xs font-semibold rounded position-${pick.player.position}`}>
-                        {pick.player.position}
-                      </span>
-                      <div className="text-sm font-medium truncate" title={pick.player.name}>
-                        {pick.player.name}
+            {draftBoardData.map((round) => (
+              <div key={round.round} className="mb-6">
+                <h3 className="font-semibold text-sm mb-2 text-gray-700">Round {round.round}</h3>
+                <div className="grid grid-cols-3 md:grid-cols-6 lg:grid-cols-12 gap-2">
+                  {round.picks.map((pick) => (
+                    <div 
+                      key={pick.pick} 
+                      className={`border rounded-md p-2 text-center ${
+                        pick.isActive ? 'border-primary-600 bg-primary-50 shadow-sm' : 
+                        pick.player ? 'bg-gray-100' : 'bg-white'
+                      } ${pick.isTraded ? 'border-orange-400' : ''}`}
+                    >
+                      <div className="text-xs text-gray-500 mb-1">
+                        {pick.pick} - {pick.teamName}
+                        {pick.isTraded && (
+                          <span className="text-orange-500 text-[10px] ml-1">(traded)</span>
+                        )}
                       </div>
+                      {pick.player ? (
+                        <div>
+                          <span className={`inline-block w-6 text-center text-xs font-semibold rounded position-${pick.player.position}`}>
+                            {pick.player.position}
+                          </span>
+                          <div className="text-xs font-medium truncate" title={pick.player.name}>
+                            {pick.player.name}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="h-8 flex items-center justify-center text-xs text-gray-400">
+                          {pick.isActive ? 'On the clock' : 'Empty'}
+                        </div>
+                      )}
                     </div>
-                  ) : (
-                    <div className="h-8 flex items-center justify-center text-xs text-gray-400">
-                      {pick.isActive ? 'On the clock' : 'Empty'}
-                    </div>
-                  )}
+                  ))}
                 </div>
-              ))}
-            </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
 
-            {/* All Teams View */}
-            <div className="grid grid-cols-3 lg:grid-cols-6 gap-3">
+        {/* Team Rosters */}
+        <Card className="mb-6">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-xl">Team Rosters</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               {teams.map((team) => (
                 <div key={team.id} className="border rounded-md overflow-hidden">
                   <div className={`flex flex-col p-2 ${
@@ -484,28 +528,8 @@ export default function LiveDraft() {
 
         {/* Available Players */}
         <Card>
-          <CardHeader className="pb-3 flex flex-row items-center justify-between">
+          <CardHeader className="pb-3">
             <CardTitle>Available Players</CardTitle>
-            <div className="flex items-center gap-2">
-              <Input
-                type="search"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-40 sm:w-60 text-sm"
-                placeholder="Search players..."
-              />
-              <Select value={filterPosition} onValueChange={setFilterPosition}>
-                <SelectTrigger className="w-32 text-sm">
-                  <SelectValue placeholder="All Positions" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Positions</SelectItem>
-                  {POSITIONS.map((pos) => (
-                    <SelectItem key={pos} value={pos}>{pos}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
           </CardHeader>
           <CardContent>
             <div className="overflow-auto max-h-[calc(100vh-560px)]">
