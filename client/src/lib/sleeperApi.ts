@@ -228,11 +228,29 @@ export async function getPlayerById(playerId: string): Promise<SleeperPlayer | n
 export async function fetchRookies(): Promise<SleeperPlayer[]> {
   const players = await fetchPlayers();
   
-  return Object.values(players).filter(player => 
+  // Filter for rookies (years_exp === 0) at key fantasy positions
+  const rookies = Object.values(players).filter(player => 
     player.years_exp === 0 && 
     player.position && 
     ['QB', 'RB', 'WR', 'TE'].includes(player.position)
   );
+  
+  // Sort by position importance and name
+  return rookies.sort((a, b) => {
+    // First sort by position importance
+    const positionOrder = { 'QB': 1, 'RB': 2, 'WR': 3, 'TE': 4 };
+    const posA = positionOrder[a.position as keyof typeof positionOrder] || 999;
+    const posB = positionOrder[b.position as keyof typeof positionOrder] || 999;
+    
+    if (posA !== posB) {
+      return posA - posB;
+    }
+    
+    // Then sort by full name
+    const nameA = `${a.first_name} ${a.last_name}`.toLowerCase();
+    const nameB = `${b.first_name} ${b.last_name}`.toLowerCase();
+    return nameA.localeCompare(nameB);
+  });
 }
 
 /**
@@ -252,19 +270,31 @@ export async function mapSleeperDataToAppFormat() {
     
     if (league.draft_id) {
       draft = await fetchDraft(league.draft_id);
-      draftPicks = await fetchDraftPicks(league.draft_id);
+      // Only fetch picks if the draft has started
+      if (draft.status !== 'pre_draft') {
+        draftPicks = await fetchDraftPicks(league.draft_id);
+      }
     }
     
-    // Map users to teams
+    // Get draft order from the draft object
+    const draftOrder = draft?.draft_order || {};
+    
+    // Map users to teams with correct draft positions
     const teams = rosters.map(roster => {
       const user = users.find(u => u.user_id === roster.owner_id);
+      const draftPosition = user?.user_id ? draftOrder[user.user_id] : null;
+      
       return {
         id: roster.roster_id,
         name: user?.display_name || `Team ${roster.roster_id}`,
         userId: roster.owner_id,
         avatar: user?.avatar || '',
+        draftPosition: draftPosition || roster.roster_id,
       };
     });
+    
+    // Sort teams by draft position for consistent ordering
+    teams.sort((a, b) => (a.draftPosition || 999) - (b.draftPosition || 999));
     
     // Map rookies to players in our format
     const players = rookies.map((rookie, index) => ({
@@ -272,9 +302,9 @@ export async function mapSleeperDataToAppFormat() {
       sleeperPlayerId: rookie.player_id,
       name: `${rookie.first_name} ${rookie.last_name}`,
       position: rookie.position,
-      school: rookie.college || '',
-      grade: 75, // Default grade
-      tier: 3, // Default tier
+      school: rookie.college || 'Unknown',
+      grade: determineDefaultGrade(rookie.position), // More logical default grades based on position
+      tier: determineDefaultTier(rookie.position), // Default tier based on position
       notes: '',
       order: index + 1,
     }));
@@ -291,7 +321,7 @@ export async function mapSleeperDataToAppFormat() {
         teamId: pick.roster_id,
         player: player,
       };
-    }).filter(Boolean);
+    }).filter(Boolean) as any[];
     
     return {
       league,
@@ -304,4 +334,22 @@ export async function mapSleeperDataToAppFormat() {
     console.error('Error mapping Sleeper data:', error);
     throw error;
   }
+}
+
+// Helper function to determine default grade based on position
+function determineDefaultGrade(position: string): number {
+  switch (position) {
+    case 'QB': return 80; // QBs tend to be valued higher in dynasty
+    case 'RB': return 78; // RBs are also highly valued
+    case 'WR': return 76; // WRs slightly below RBs
+    case 'TE': return 72; // TEs typically valued less
+    default: return 75;
+  }
+}
+
+// Helper function to determine default tier based on position
+function determineDefaultTier(position: string): number {
+  // For simplicity, we'll use the same tier for all positions initially
+  // This could be expanded to be more sophisticated
+  return 3; // Default to tier 3 (middle tier)
 }

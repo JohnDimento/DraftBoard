@@ -125,7 +125,13 @@ export default function LiveDraft() {
   // Use Sleeper data when available
   useEffect(() => {
     if (sleeperDataQuery.isSuccess && sleeperDataQuery.data) {
-      const { teams: sleeperTeams, players: sleeperPlayers, numberOfRounds: rounds } = sleeperDataQuery.data;
+      const { 
+        teams: sleeperTeams, 
+        players: sleeperPlayers, 
+        numberOfRounds: rounds,
+        draftHistory: sleeperDraftHistory,
+        league: sleeperLeague
+      } = sleeperDataQuery.data;
       
       // Update teams
       if (sleeperTeams && sleeperTeams.length > 0) {
@@ -137,16 +143,97 @@ export default function LiveDraft() {
         setNumberOfRounds(rounds);
       }
       
-      // We'll use our existing player data system to avoid compatibility issues,
-      // but we could import players from Sleeper if needed
+      // If players are available from Sleeper and no players are loaded yet,
+      // we can use the Sleeper players data
+      if (sleeperPlayers && sleeperPlayers.length > 0 && 
+          (!playersQuery.data || playersQuery.data.length === 0)) {
+        // We'll add the Sleeper players to our database
+        sleeperPlayers.forEach(player => {
+          // Only add if we don't already have this player
+          addPlayerMutation.mutate({
+            name: player.name,
+            position: player.position,
+            school: player.school,
+            grade: player.grade,
+            tier: player.tier,
+            notes: player.notes,
+            order: player.order
+          });
+        });
+      }
+      
+      // If we have draft history from Sleeper (this would be for in-progress drafts)
+      if (sleeperDraftHistory && sleeperDraftHistory.length > 0) {
+        setDraftHistory(sleeperDraftHistory);
+        setPickCounter(sleeperDraftHistory.length + 1);
+      }
       
       toast({
         title: "Sleeper League Connected",
-        description: `Connected to your league: ${leagueQuery.data?.name || LEAGUE_ID}`,
+        description: `Connected to ${sleeperLeague?.name || 'your Sleeper league'}`,
       });
     }
-  }, [sleeperDataQuery.isSuccess, sleeperDataQuery.data, leagueQuery.data]);
+  }, [sleeperDataQuery.isSuccess, sleeperDataQuery.data, playersQuery.data]);
 
+  // Function to load Sleeper rookies
+  const loadSleeperRookies = async () => {
+    if (!sleeperDataQuery.isSuccess || !sleeperDataQuery.data?.players) {
+      toast({
+        title: "Error",
+        description: "Sleeper data not available yet. Please wait for the connection to complete.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // Get the rookies from Sleeper data
+    const { players: sleeperPlayers } = sleeperDataQuery.data;
+    
+    // First delete all existing players (clear the draft board)
+    if (playersQuery.data) {
+      // We'll show a confirmation dialog here before deleting
+      const confirm = window.confirm(
+        "This will replace your current player list with rookies from Sleeper. Continue?"
+      );
+      
+      if (!confirm) return;
+      
+      // Delete all existing players by ID
+      for (const player of playersQuery.data) {
+        try {
+          await apiRequest('DELETE', `/api/players/${player.id}`);
+        } catch (error) {
+          console.error(`Failed to delete player ${player.id}:`, error);
+        }
+      }
+    }
+    
+    // Now add the Sleeper rookies
+    for (const player of sleeperPlayers) {
+      try {
+        await addPlayerMutation.mutateAsync({
+          name: player.name,
+          position: player.position,
+          school: player.school,
+          grade: player.grade,
+          tier: player.tier,
+          notes: player.notes || '',
+          order: player.order
+        });
+      } catch (error) {
+        console.error(`Failed to add player ${player.name}:`, error);
+      }
+    }
+    
+    // Refresh the player list
+    queryClient.invalidateQueries({ queryKey: ['/api/players'] });
+    
+    toast({
+      title: "Success",
+      description: `Loaded ${sleeperPlayers.length} rookies from Sleeper`,
+    });
+  };
+  
   // Filter available players
   const availablePlayers = playersQuery.data 
     ? playersQuery.data
