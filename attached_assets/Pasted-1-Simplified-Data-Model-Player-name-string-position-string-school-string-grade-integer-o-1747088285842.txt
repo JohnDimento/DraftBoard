@@ -1,0 +1,99 @@
+1. Simplified Data Model
+Player
+
+name (string)
+
+position (string)
+
+school (string)
+
+grade (integer or decimal)
+
+tier (integer or string label)
+
+notes (text)
+
+DraftBoard
+
+simply stores the ordered list of Player IDs and their tier assignments
+
+No need for evaluators or video links—just one table for your players and one for your board order.
+
+2. Core Features & UI
+Player List
+
+A sortable table or list of all prospects
+
+Columns: Name, Position, Grade, Tier, a “Notes” icon/button
+
+Drag-and-Drop Ranking
+
+Use something like Rails + StimulusJS with SortableJS (or React DnD)
+
+Reordering is saved via an AJAX call to update the board’s order
+
+Tier Assignment
+
+Each row has a dropdown (Tier 1–5 or custom labels)
+
+Color-coded backgrounds per tier for quick visual grouping
+
+Quick Notes Panel
+
+Click a row to open an inline textarea for free-form notes
+
+Auto-save as you type
+
+Grade Input
+
+Inline editable field (e.g. type “72” on a 20–80 scale)
+
+Automatically resorts the list if you choose “Sort by Grade”
+
+3. Tech Stack & Implementation
+Back End:
+
+Rails with PostgreSQL (your comfort zone)
+
+One controller (PlayersController) handling both CRUD and board ordering updates
+
+Front End:
+
+Tailwind CSS for utility-first styling
+
+StimulusJS + SortableJS for drag-and-drop
+
+Optional: a tiny bit of Alpine.js for dropdowns/edit-in-place
+
+Hosting:
+
+GitHub Pages → static export (if you pre-render everything)
+
+OR Heroku/Railway for live Rails app (simplest for AJAX persistence)
+
+4. Roadmap
+Wireframes
+
+Sketch one page that shows your board: list of players + tier bands
+
+Schema & Migrations
+
+rails g model Player name:string position:string school:string grade:integer tier:string notes:text order:integer
+
+Basic CRUD
+
+Scaffold the table view and edit form
+
+Drag-and-Drop
+
+Integrate SortableJS with Stimulus to POST new orders to /players/reorder
+
+Tier & Grade Editing
+
+Make the tier dropdown and grade field inline-editable
+
+Finalize & Style
+
+Polish with Tailwind, add persistence tests, deploy
+
+That should give you a clean, single-user draft board—no war room complexity or video support needed. Let me know if you want sample code snippets or help wireframing!

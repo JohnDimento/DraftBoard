@@ -2,6 +2,15 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Player, POSITIONS, TIER_COLORS } from '@/lib/draftBoardTypes';
 import { apiRequest } from '@/lib/queryClient';
+import { 
+  LEAGUE_ID, 
+  fetchLeague, 
+  fetchLeagueUsers, 
+  fetchDraft, 
+  fetchPlayers,
+  fetchRookies,
+  mapSleeperDataToAppFormat
+} from '@/lib/sleeperApi';
 import { useToast } from '@/hooks/use-toast';
 import Header from '@/components/Header';
 import AddPlayerModal from '@/components/AddPlayerModal';
@@ -34,7 +43,7 @@ export default function LiveDraft() {
   }[]>([]);
   const [pickCounter, setPickCounter] = useState(1);
   const [numberOfRounds, setNumberOfRounds] = useState(4);
-  const [teams, setTeams] = useState<Array<{ id: number; name: string }>>([
+  const [teams, setTeams] = useState<Array<{ id: number; name: string; userId?: string; avatar?: string }>>([
     { id: 1, name: 'Team 1' },
     { id: 2, name: 'Team 2' },
     { id: 3, name: 'Team 3' },
@@ -63,9 +72,32 @@ export default function LiveDraft() {
   // Map of traded pick numbers to their new team IDs
   const [tradedPicks, setTradedPicks] = useState<Map<number, number>>(new Map());
 
-  // Get all available players
+  // Get all available players from our API
   const playersQuery = useQuery<Player[]>({
     queryKey: ['/api/players'],
+  });
+  
+  // Load data from Sleeper API
+  const sleeperDataQuery = useQuery({
+    queryKey: ['sleeper-data', LEAGUE_ID],
+    queryFn: async () => {
+      return await mapSleeperDataToAppFormat();
+    },
+    enabled: true, // Always fetch data
+  });
+  
+  // Query for league information
+  const leagueQuery = useQuery({
+    queryKey: ['sleeper-league', LEAGUE_ID],
+    queryFn: async () => await fetchLeague(),
+    enabled: true,
+  });
+  
+  // Query for league users
+  const usersQuery = useQuery({
+    queryKey: ['sleeper-users', LEAGUE_ID],
+    queryFn: async () => await fetchLeagueUsers(),
+    enabled: true,
   });
 
   // Add player mutation
@@ -89,6 +121,31 @@ export default function LiveDraft() {
       });
     },
   });
+
+  // Use Sleeper data when available
+  useEffect(() => {
+    if (sleeperDataQuery.isSuccess && sleeperDataQuery.data) {
+      const { teams: sleeperTeams, players: sleeperPlayers, numberOfRounds: rounds } = sleeperDataQuery.data;
+      
+      // Update teams
+      if (sleeperTeams && sleeperTeams.length > 0) {
+        setTeams(sleeperTeams);
+      }
+      
+      // Update number of rounds if available
+      if (rounds) {
+        setNumberOfRounds(rounds);
+      }
+      
+      // We'll use our existing player data system to avoid compatibility issues,
+      // but we could import players from Sleeper if needed
+      
+      toast({
+        title: "Sleeper League Connected",
+        description: `Connected to your league: ${leagueQuery.data?.name || LEAGUE_ID}`,
+      });
+    }
+  }, [sleeperDataQuery.isSuccess, sleeperDataQuery.data, leagueQuery.data]);
 
   // Filter available players
   const availablePlayers = playersQuery.data 
@@ -344,16 +401,32 @@ export default function LiveDraft() {
     return rounds;
   };
 
-  if (playersQuery.isError) {
+  // Handle errors
+  if (playersQuery.isError || sleeperDataQuery.isError) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center p-6 bg-white shadow-md rounded-lg">
           <h2 className="text-xl font-bold text-red-600 mb-2">Error Loading Draft Board</h2>
-          <p className="text-gray-600">An error occurred while loading the player data. Please try again later.</p>
+          <p className="text-gray-600">
+            {playersQuery.isError 
+              ? "An error occurred while loading the player data." 
+              : "An error occurred while connecting to Sleeper API."}
+            Please try again later.
+          </p>
         </div>
       </div>
     );
   }
+  
+  // Handle Sleeper data loading
+  const isLoadingSleeper = sleeperDataQuery.isLoading || leagueQuery.isLoading || usersQuery.isLoading;
+  
+  // Connection status message
+  const connectionStatus = isLoadingSleeper 
+    ? "Connecting to Sleeper..." 
+    : sleeperDataQuery.isSuccess 
+      ? `Connected to ${leagueQuery.data?.name || 'your Sleeper league'}`
+      : "Using local draft data";
 
   const draftBoardData = getDraftBoardData();
   const currentRound = Math.ceil(pickCounter / teams.length);
@@ -392,6 +465,14 @@ export default function LiveDraft() {
               <Undo2 className="h-4 w-4 mr-1" />
               Undo Pick
             </Button>
+            
+            {/* Sleeper connection status */}
+            <div className="flex items-center ml-2">
+              <Badge variant="outline" className={`px-3 py-1 ${isLoadingSleeper ? 'bg-yellow-50 text-yellow-800' : sleeperDataQuery.isSuccess ? 'bg-green-50 text-green-800' : ''}`}>
+                {isLoadingSleeper && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
+                {connectionStatus}
+              </Badge>
+            </div>
           </div>
           
           <div className="flex items-center gap-2">
@@ -489,6 +570,16 @@ export default function LiveDraft() {
                         />
                       ) : (
                         <div className="flex items-center">
+                          {team.avatar && (
+                            <div className="w-5 h-5 rounded-full bg-gray-200 mr-1 overflow-hidden">
+                              <img 
+                                src={`https://sleepercdn.com/avatars/thumbs/${team.avatar}`} 
+                                alt={team.name} 
+                                className="w-full h-full object-cover"
+                                onError={(e) => (e.currentTarget.style.display = 'none')}
+                              />
+                            </div>
+                          )}
                           <span className="truncate">{team.name}</span>
                           <Edit className="h-3 w-3 ml-1 opacity-60" />
                         </div>
