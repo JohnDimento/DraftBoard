@@ -72,7 +72,8 @@ export default function DraftBoard() {
     <div className="min-h-screen flex flex-col">
       <Header 
         onAddPlayer={() => setIsAddPlayerModalOpen(true)} 
-        onExport={exportToCsv} 
+        onExport={exportToCsv}
+        pageName="Player Rankings" 
       />
       
       <Controls 
