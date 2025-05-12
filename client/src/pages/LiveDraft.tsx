@@ -581,6 +581,18 @@ export default function LiveDraft() {
                 ))}
               </SelectContent>
             </Select>
+            
+            {/* Sleeper rookies integration button */}
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={loadSleeperRookies}
+              disabled={isLoadingSleeper || !sleeperDataQuery.isSuccess}
+              className="ml-2"
+            >
+              <Loader2 className={`h-3 w-3 mr-1 ${isLoadingSleeper ? 'animate-spin' : ''}`} />
+              {isLoadingSleeper ? 'Loading...' : 'Load Sleeper Rookies'}
+            </Button>
           </div>
         </div>
         
@@ -610,11 +622,16 @@ export default function LiveDraft() {
                       </div>
                       {pick.player ? (
                         <div>
-                          <span className={`inline-block w-6 text-center text-xs font-semibold rounded position-${pick.player.position}`}>
-                            {pick.player.position}
-                          </span>
-                          <div className="text-xs font-medium truncate" title={pick.player.name}>
-                            {pick.player.name}
+                          <div className="flex items-center">
+                            <span className={`inline-block w-6 text-center text-xs font-semibold rounded position-${pick.player.position} mr-1`}>
+                              {pick.player.position}
+                            </span>
+                            <span className="text-xs font-medium truncate" title={pick.player.name}>
+                              {pick.player.name}
+                            </span>
+                          </div>
+                          <div className="text-[9px] text-gray-500 mt-0.5 truncate" title={pick.player.school}>
+                            {pick.player.school}
                           </div>
                         </div>
                       ) : (
@@ -638,7 +655,9 @@ export default function LiveDraft() {
           <CardContent>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               {teams.map((team) => (
-                <div key={team.id} className="border rounded-md overflow-hidden">
+                <div key={team.id} className={`border rounded-md overflow-hidden ${
+                  team.id === selectedTeamId ? 'border-primary border-2 shadow-md' : 'border'
+                }`}>
                   <div className={`flex flex-col p-2 ${
                     team.id === selectedTeamId ? 'bg-primary text-white' : 'bg-gray-100'
                   }`}>
@@ -690,10 +709,13 @@ export default function LiveDraft() {
                     ) : (
                       getTeamPlayers(team.id).map((pick) => (
                         <div key={pick.id} className="flex items-center py-1 border-b border-gray-100 last:border-0">
-                          <span className={`inline-block w-6 text-center mr-1 rounded position-${pick.player.position}`}>
+                          <span className={`inline-block w-6 text-center mr-1 text-xs font-semibold rounded position-${pick.player.position}`}>
                             {pick.player.position}
                           </span>
-                          <span className="truncate" title={pick.player.name}>{pick.player.name}</span>
+                          <div className="flex flex-col">
+                            <span className="truncate text-xs font-medium" title={pick.player.name}>{pick.player.name}</span>
+                            <span className="text-[9px] text-gray-500" title={pick.player.school}>{pick.player.school}</span>
+                          </div>
                         </div>
                       ))
                     )}
