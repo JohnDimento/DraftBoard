@@ -32,6 +32,10 @@
   --tier-3: 48 95% 47%;
   --tier-4: 25 94% 53%;
   --tier-5: 0 85% 59%;
+  
+  /* Draft Board colors */
+  --primary-50: 221 83% 95%;
+  --primary-600: 221 83% 35%;
 }
 
 .dark {
@@ -115,5 +119,14 @@
   
   .position-OL, .position-DL, .position-LB, .position-CB, .position-S {
     @apply bg-gray-100 text-gray-800;
+  }
+  
+  /* Draft board specific styles */
+  .bg-primary-50 {
+    background-color: hsl(var(--primary-50));
+  }
+  
+  .border-primary-600 {
+    border-color: hsl(var(--primary-600));
   }
 }

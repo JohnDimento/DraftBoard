@@ -16,8 +16,9 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Loader2, Plus, Trash2, Undo2 } from 'lucide-react';
+import { Loader2, Plus, Undo2, Edit } from 'lucide-react';
 
 export default function LiveDraft() {
   const { toast } = useToast();
@@ -31,6 +32,7 @@ export default function LiveDraft() {
     pickNumber: number;
   }[]>([]);
   const [pickCounter, setPickCounter] = useState(1);
+  const [numberOfRounds, setNumberOfRounds] = useState(12);
   const [teams, setTeams] = useState<Array<{ id: number; name: string }>>([
     { id: 1, name: 'Team 1' },
     { id: 2, name: 'Team 2' },
@@ -108,13 +110,13 @@ export default function LiveDraft() {
   // Draft a player
   const draftPlayer = (player: Player) => {
     setDraftHistory(prev => [
+      ...prev,
       {
         id: pickCounter,
         player,
         teamId: selectedTeamId,
         pickNumber: pickCounter
-      },
-      ...prev
+      }
     ]);
     setPickCounter(prev => prev + 1);
     
@@ -128,7 +130,7 @@ export default function LiveDraft() {
   const undoLastPick = () => {
     if (draftHistory.length === 0) return;
     
-    setDraftHistory(prev => prev.slice(1));
+    setDraftHistory(prev => prev.slice(0, -1));
     setPickCounter(prev => prev - 1);
     
     toast({
@@ -162,6 +164,37 @@ export default function LiveDraft() {
       .sort((a, b) => a.pickNumber - b.pickNumber);
   };
 
+  // Generate draft board data
+  const getDraftBoardData = () => {
+    const rounds = [];
+    
+    for (let round = 1; round <= numberOfRounds; round++) {
+      const picks = [];
+      const isSnakeRound = round % 2 === 0;
+      
+      for (let i = 1; i <= teams.length; i++) {
+        const teamIndex = isSnakeRound ? teams.length - i + 1 : i;
+        const pickNumber = (round - 1) * teams.length + i;
+        const team = teams.find(t => t.id === teamIndex);
+        
+        const draftPick = draftHistory.find(pick => pick.pickNumber === pickNumber);
+        
+        picks.push({
+          round,
+          pick: pickNumber,
+          teamId: teamIndex,
+          teamName: team ? team.name : `Team ${teamIndex}`,
+          player: draftPick?.player || null,
+          isActive: pickNumber === pickCounter
+        });
+      }
+      
+      rounds.push({ round, picks });
+    }
+    
+    return rounds;
+  };
+
   if (playersQuery.isError) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -173,74 +206,156 @@ export default function LiveDraft() {
     );
   }
 
+  const draftBoardData = getDraftBoardData();
+  const currentRound = Math.ceil(pickCounter / teams.length);
+  const currentRoundPicks = draftBoardData.find(r => r.round === currentRound)?.picks || [];
+
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col bg-gray-50">
       <Header 
         onAddPlayer={() => setIsAddPlayerModalOpen(true)} 
         onExport={() => {}} 
         pageName="Live Draft Tracker"
       />
       
-      {/* Draft Controls */}
-      <div className="bg-white shadow-sm border-b">
-        <div className="container mx-auto px-4 py-3 flex flex-col md:flex-row justify-between items-center">
-          <div className="flex flex-col sm:flex-row items-center mb-3 md:mb-0 gap-2">
-            <div className="flex items-center">
-              <span className="text-sm font-medium mr-2">On the Clock:</span>
-              <Badge variant="outline" className={`font-bold px-4 py-1 bg-primary/10 text-primary`}>
-                {teams.find(t => t.id === selectedTeamId)?.name || `Team ${selectedTeamId}`}
-              </Badge>
+      {/* Draft Board */}
+      <div className="container mx-auto px-4 py-4">
+        <Card className="mb-6">
+          <CardHeader className="pb-3">
+            <div className="flex justify-between items-center">
+              <CardTitle className="text-xl">Draft Board</CardTitle>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center">
+                  <span className="text-sm font-medium mr-2">On the Clock:</span>
+                  <Badge className="font-bold px-4 py-1 bg-primary text-white">
+                    {teams.find(t => t.id === selectedTeamId)?.name || `Team ${selectedTeamId}`}
+                  </Badge>
+                </div>
+                <div className="flex items-center">
+                  <span className="text-sm font-medium mr-2">Pick:</span>
+                  <Badge variant="outline" className="px-3 py-1">
+                    {pickCounter}
+                  </Badge>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={undoLastPick}
+                  disabled={draftHistory.length === 0}
+                >
+                  <Undo2 className="h-4 w-4 mr-1" />
+                  Undo Pick
+                </Button>
+              </div>
             </div>
-            <div className="flex items-center">
-              <span className="text-sm font-medium mr-2">Pick:</span>
-              <Badge variant="outline" className="px-3 py-1">
-                {pickCounter}
-              </Badge>
+          </CardHeader>
+          <CardContent>
+            {/* Current Round View */}
+            <div className="grid grid-cols-6 sm:grid-cols-12 gap-2 mb-4">
+              {currentRoundPicks.map((pick) => (
+                <div 
+                  key={pick.pick} 
+                  className={`border rounded-md p-2 text-center ${
+                    pick.isActive ? 'border-primary-600 bg-primary-50 shadow-sm' : 
+                    pick.player ? 'bg-gray-100' : 'bg-white'
+                  }`}
+                >
+                  <div className="text-xs text-gray-500 mb-1">
+                    {pick.round}.{pick.teamId} - {pick.teamName}
+                  </div>
+                  {pick.player ? (
+                    <div>
+                      <span className={`inline-block w-6 text-center text-xs font-semibold rounded position-${pick.player.position}`}>
+                        {pick.player.position}
+                      </span>
+                      <div className="text-sm font-medium truncate" title={pick.player.name}>
+                        {pick.player.name}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="h-8 flex items-center justify-center text-xs text-gray-400">
+                      {pick.isActive ? 'On the clock' : 'Empty'}
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={undoLastPick}
-              disabled={draftHistory.length === 0}
-              className="ml-2"
-            >
-              <Undo2 className="h-4 w-4 mr-1" />
-              Undo Pick
-            </Button>
-          </div>
-          <div className="flex items-center gap-2">
-            <Input
-              type="search"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-40 sm:w-auto text-sm"
-              placeholder="Search players..."
-            />
-            <Select value={filterPosition} onValueChange={setFilterPosition}>
-              <SelectTrigger className="w-32 text-sm">
-                <SelectValue placeholder="All Positions" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Positions</SelectItem>
-                {POSITIONS.map((pos) => (
-                  <SelectItem key={pos} value={pos}>{pos}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-      </div>
-      
-      {/* Main Draft Area */}
-      <div className="flex-grow container mx-auto px-4 py-4 flex flex-col lg:flex-row">
+
+            {/* All Teams View */}
+            <div className="grid grid-cols-3 lg:grid-cols-6 gap-3">
+              {teams.map((team) => (
+                <div key={team.id} className="border rounded-md overflow-hidden">
+                  <div className={`flex justify-between items-center p-2 ${
+                    team.id === selectedTeamId ? 'bg-primary text-white' : 'bg-gray-100'
+                  }`}>
+                    <div 
+                      className="font-medium text-sm flex items-center cursor-pointer w-full"
+                      onClick={() => startEditingTeam(team.id)}
+                    >
+                      {teamEditing === team.id ? (
+                        <Input
+                          value={teamNameInput}
+                          onChange={(e) => setTeamNameInput(e.target.value)}
+                          className="text-sm h-7 bg-white"
+                          autoFocus
+                          onBlur={saveTeamName}
+                          onKeyDown={(e) => e.key === 'Enter' && saveTeamName()}
+                        />
+                      ) : (
+                        <div className="flex items-center">
+                          <span className="truncate">{team.name}</span>
+                          <Edit className="h-3 w-3 ml-1 opacity-60" />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="p-2 text-xs space-y-1 h-40 overflow-y-auto">
+                    {getTeamPlayers(team.id).length === 0 ? (
+                      <div className="text-gray-400 text-center pt-2">No picks yet</div>
+                    ) : (
+                      getTeamPlayers(team.id).map((pick) => (
+                        <div key={pick.id} className="flex items-center py-1 border-b border-gray-100 last:border-0">
+                          <span className={`inline-block w-6 text-center mr-1 rounded position-${pick.player.position}`}>
+                            {pick.player.position}
+                          </span>
+                          <span className="truncate" title={pick.player.name}>{pick.player.name}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Available Players */}
-        <div className="lg:w-7/12 pr-0 lg:pr-4 mb-6 lg:mb-0">
-          <div className="bg-white shadow-md rounded-lg overflow-hidden">
-            <div className="p-4 border-b flex justify-between items-center">
-              <h2 className="text-lg font-semibold text-gray-800">Available Players</h2>
-              <span className="text-sm text-gray-500">{availablePlayers.length} Players</span>
+        <Card>
+          <CardHeader className="pb-3 flex flex-row items-center justify-between">
+            <CardTitle>Available Players</CardTitle>
+            <div className="flex items-center gap-2">
+              <Input
+                type="search"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-40 sm:w-60 text-sm"
+                placeholder="Search players..."
+              />
+              <Select value={filterPosition} onValueChange={setFilterPosition}>
+                <SelectTrigger className="w-32 text-sm">
+                  <SelectValue placeholder="All Positions" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Positions</SelectItem>
+                  {POSITIONS.map((pos) => (
+                    <SelectItem key={pos} value={pos}>{pos}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-            <div className="overflow-auto max-h-[calc(100vh-300px)]">
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-auto max-h-[calc(100vh-560px)]">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -296,105 +411,8 @@ export default function LiveDraft() {
                 </TableBody>
               </Table>
             </div>
-          </div>
-        </div>
-        
-        {/* Draft History and Team Rosters */}
-        <div className="lg:w-5/12">
-          <div className="bg-white shadow-md rounded-lg overflow-hidden mb-4">
-            <div className="p-4 border-b">
-              <h2 className="text-lg font-semibold text-gray-800">Recent Picks</h2>
-            </div>
-            <div className="overflow-auto max-h-[240px]">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-16">Pick</TableHead>
-                    <TableHead>Player</TableHead>
-                    <TableHead>Pos</TableHead>
-                    <TableHead>Team</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {draftHistory.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={4} className="h-16 text-center">
-                        <p className="text-sm text-gray-500">No players drafted yet</p>
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    draftHistory.map((pick) => (
-                      <TableRow key={pick.id}>
-                        <TableCell>{pick.pickNumber}</TableCell>
-                        <TableCell className="font-medium">{pick.player.name}</TableCell>
-                        <TableCell>
-                          <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full position-${pick.player.position}`}>
-                            {pick.player.position}
-                          </span>
-                        </TableCell>
-                        <TableCell>{teams.find(t => t.id === pick.teamId)?.name}</TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-          </div>
-          
-          {/* Team Rosters */}
-          <div className="bg-white shadow-md rounded-lg overflow-hidden">
-            <div className="p-4 border-b">
-              <h2 className="text-lg font-semibold text-gray-800">Team Rosters</h2>
-            </div>
-            <div className="overflow-auto max-h-[calc(100vh-600px)]">
-              <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                {teams.map((team) => (
-                  <div 
-                    key={team.id} 
-                    className={`p-3 border rounded-md ${team.id === selectedTeamId ? 'border-primary bg-primary/5' : ''}`}
-                  >
-                    <div className="flex justify-between items-center mb-2">
-                      {teamEditing === team.id ? (
-                        <div className="flex items-center w-full">
-                          <Input
-                            value={teamNameInput}
-                            onChange={(e) => setTeamNameInput(e.target.value)}
-                            className="text-sm h-7"
-                            autoFocus
-                            onBlur={saveTeamName}
-                            onKeyDown={(e) => e.key === 'Enter' && saveTeamName()}
-                          />
-                        </div>
-                      ) : (
-                        <h3 
-                          className="font-medium text-sm cursor-pointer hover:text-primary"
-                          onClick={() => startEditingTeam(team.id)}
-                        >
-                          {team.name}
-                        </h3>
-                      )}
-                      <span className="text-xs text-gray-500">
-                        {getTeamPlayers(team.id).length} players
-                      </span>
-                    </div>
-                    <div className="space-y-1">
-                      {getTeamPlayers(team.id).map((pick) => (
-                        <div key={pick.id} className="flex justify-between items-center text-xs">
-                          <div className="flex items-center">
-                            <span className={`inline-block w-6 h-5 text-center mr-1 rounded position-${pick.player.position}`}>
-                              {pick.player.position}
-                            </span>
-                            <span>{pick.player.name}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       </div>
       
       <AddPlayerModal 
