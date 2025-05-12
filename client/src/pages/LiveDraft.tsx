@@ -17,8 +17,9 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Loader2, Plus, Undo2, Edit } from 'lucide-react';
+import { Loader2, Plus, Undo2, Edit, ArrowLeftRight } from 'lucide-react';
 
 export default function LiveDraft() {
   const { toast } = useToast();
@@ -32,7 +33,7 @@ export default function LiveDraft() {
     pickNumber: number;
   }[]>([]);
   const [pickCounter, setPickCounter] = useState(1);
-  const [numberOfRounds, setNumberOfRounds] = useState(12);
+  const [numberOfRounds, setNumberOfRounds] = useState(4);
   const [teams, setTeams] = useState<Array<{ id: number; name: string }>>([
     { id: 1, name: 'Team 1' },
     { id: 2, name: 'Team 2' },
@@ -51,6 +52,16 @@ export default function LiveDraft() {
   const [teamNameInput, setTeamNameInput] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [filterPosition, setFilterPosition] = useState('all');
+  
+  // Trade dialog state
+  const [isTradeDialogOpen, setIsTradeDialogOpen] = useState(false);
+  const [fromTeamId, setFromTeamId] = useState<number | null>(null);
+  const [toTeamId, setToTeamId] = useState<number | null>(null);
+  const [fromPickNumbers, setFromPickNumbers] = useState<number[]>([]);
+  const [toPickNumbers, setToPickNumbers] = useState<number[]>([]);
+  
+  // Map of traded pick numbers to their new team IDs
+  const [tradedPicks, setTradedPicks] = useState<Map<number, number>>(new Map());
 
   // Get all available players
   const playersQuery = useQuery<Player[]>({
@@ -164,9 +175,126 @@ export default function LiveDraft() {
       .sort((a, b) => a.pickNumber - b.pickNumber);
   };
 
+  // Trade picks between teams
+  const openTradeDialog = (teamId: number) => {
+    setFromTeamId(teamId);
+    setToTeamId(null);
+    setFromPickNumbers([]);
+    setToPickNumbers([]);
+    setIsTradeDialogOpen(true);
+  };
+
+  const togglePickSelection = (teamId: number, pickNumber: number) => {
+    if (teamId === fromTeamId) {
+      setFromPickNumbers(prev => 
+        prev.includes(pickNumber) 
+          ? prev.filter(p => p !== pickNumber) 
+          : [...prev, pickNumber]
+      );
+    } else if (teamId === toTeamId) {
+      setToPickNumbers(prev => 
+        prev.includes(pickNumber) 
+          ? prev.filter(p => p !== pickNumber) 
+          : [...prev, pickNumber]
+      );
+    }
+  };
+
+  const executeTrade = () => {
+    if (!fromTeamId || !toTeamId || fromPickNumbers.length === 0 || toPickNumbers.length === 0) {
+      toast({
+        title: "Invalid Trade",
+        description: "You need to select picks from both teams to execute a trade",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Create a new map with existing traded picks
+    const newTradedPicks = new Map(tradedPicks);
+    
+    // Add new traded picks from team 1 to team 2
+    fromPickNumbers.forEach(pickNumber => {
+      newTradedPicks.set(pickNumber, toTeamId!);
+    });
+    
+    // Add new traded picks from team 2 to team 1
+    toPickNumbers.forEach(pickNumber => {
+      newTradedPicks.set(pickNumber, fromTeamId!);
+    });
+    
+    // Update the traded picks state
+    setTradedPicks(newTradedPicks);
+    
+    // Log the trade in a toast
+    const fromTeam = teams.find(t => t.id === fromTeamId)?.name;
+    const toTeam = teams.find(t => t.id === toTeamId)?.name;
+    
+    toast({
+      title: "Trade Completed",
+      description: `Trade between ${fromTeam} and ${toTeam} executed successfully`,
+    });
+    
+    // Close the dialog and reset state
+    setIsTradeDialogOpen(false);
+    setFromTeamId(null);
+    setToTeamId(null);
+    setFromPickNumbers([]);
+    setToPickNumbers([]);
+  };
+
+  // Get owned picks for a team
+  const getTeamOwnedPicks = (teamId: number) => {
+    const picks: { round: number; pick: number; status: string }[] = [];
+    
+    getDraftBoardData().forEach(round => {
+      round.picks.forEach(pick => {
+        const isPicked = draftHistory.some(draft => draft.pickNumber === pick.pick);
+        
+        // If initial owner is this team
+        if (pick.teamId === teamId && !isPicked) {
+          const isTradedAway = fromTeamId === teamId && fromPickNumbers.includes(pick.pick);
+          
+          picks.push({
+            round: pick.round,
+            pick: pick.pick,
+            status: isTradedAway ? 'traded-away' : 'owned'
+          });
+        }
+        
+        // If traded to this team
+        if (toTeamId === teamId && fromPickNumbers.includes(pick.pick) && !isPicked) {
+          picks.push({
+            round: pick.round,
+            pick: pick.pick,
+            status: 'traded-for'
+          });
+        }
+      });
+    });
+    
+    return picks.sort((a, b) => a.pick - b.pick);
+  };
+
   // Generate draft board data
   const getDraftBoardData = () => {
     const rounds = [];
+    
+    // Create a copy of the tradedPicks map for display in the trade dialog
+    const displayTradedPicks = new Map(tradedPicks);
+    
+    // Add tentative trades to the display map if dialog is open
+    if (isTradeDialogOpen && fromTeamId && toTeamId) {
+      // Picks going from team 1 to team 2
+      fromPickNumbers.forEach(pick => {
+        displayTradedPicks.set(pick, toTeamId);
+      });
+      
+      // Picks going from team 2 to team 1
+      toPickNumbers.forEach(pick => {
+        displayTradedPicks.set(pick, fromTeamId);
+      });
+    }
     
     for (let round = 1; round <= numberOfRounds; round++) {
       const picks = [];
@@ -179,13 +307,27 @@ export default function LiveDraft() {
         
         const draftPick = draftHistory.find(pick => pick.pickNumber === pickNumber);
         
+        // Check if this pick has been traded (using actual trades for drafting, display trades for UI)
+        const actualTeamId = tradedPicks.get(pickNumber) || teamIndex;
+        const displayTeamId = displayTradedPicks.get(pickNumber) || teamIndex;
+        
+        const actualTeam = teams.find(t => t.id === displayTeamId);
+        
+        // For the current pick, use the actual team owner, not the display team
+        const teamForDrafting = pickNumber === pickCounter ? actualTeamId : displayTeamId;
+        
         picks.push({
           round,
           pick: pickNumber,
-          teamId: teamIndex,
-          teamName: team ? team.name : `Team ${teamIndex}`,
+          originalTeamId: teamIndex,
+          teamId: teamForDrafting,
+          teamName: actualTeam ? actualTeam.name : `Team ${displayTeamId}`,
+          originalTeamName: team ? team.name : `Team ${teamIndex}`,
           player: draftPick?.player || null,
-          isActive: pickNumber === pickCounter
+          isActive: pickNumber === pickCounter,
+          isTraded: displayTeamId !== teamIndex,
+          isSelected: (fromTeamId === displayTeamId && fromPickNumbers.includes(pickNumber)) ||
+                     (toTeamId === displayTeamId && toPickNumbers.includes(pickNumber))
         });
       }
       
@@ -285,7 +427,7 @@ export default function LiveDraft() {
             <div className="grid grid-cols-3 lg:grid-cols-6 gap-3">
               {teams.map((team) => (
                 <div key={team.id} className="border rounded-md overflow-hidden">
-                  <div className={`flex justify-between items-center p-2 ${
+                  <div className={`flex flex-col p-2 ${
                     team.id === selectedTeamId ? 'bg-primary text-white' : 'bg-gray-100'
                   }`}>
                     <div 
@@ -307,6 +449,17 @@ export default function LiveDraft() {
                           <Edit className="h-3 w-3 ml-1 opacity-60" />
                         </div>
                       )}
+                    </div>
+                    <div className="flex justify-end mt-1">
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={() => openTradeDialog(team.id)}
+                        className={`h-6 px-2 py-0 text-xs ${team.id === selectedTeamId ? 'text-white hover:bg-primary-700' : 'text-primary'}`}
+                      >
+                        <ArrowLeftRight className="h-3 w-3 mr-1" />
+                        Trade Picks
+                      </Button>
                     </div>
                   </div>
                   <div className="p-2 text-xs space-y-1 h-40 overflow-y-auto">
@@ -421,6 +574,179 @@ export default function LiveDraft() {
         onAddPlayer={addPlayerMutation.mutateAsync}
         isSubmitting={addPlayerMutation.isPending}
       />
+
+      {/* Trade Picks Dialog */}
+      <Dialog open={isTradeDialogOpen} onOpenChange={setIsTradeDialogOpen}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Trade Draft Picks</DialogTitle>
+          </DialogHeader>
+          
+          <div className="grid grid-cols-2 gap-4">
+            {/* From Team */}
+            <div>
+              <div className="mb-2">
+                <p className="text-sm font-medium">From Team:</p>
+                <Select 
+                  value={fromTeamId?.toString() || ''}
+                  onValueChange={(value) => setFromTeamId(parseInt(value))}
+                  disabled={fromTeamId !== null}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select team" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {teams.map((team) => (
+                      <SelectItem key={team.id} value={team.id.toString()}>
+                        {team.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              {fromTeamId && (
+                <div>
+                  <p className="text-xs text-gray-500 mb-1">Select picks to trade away:</p>
+                  <div className="space-y-1 max-h-40 overflow-y-auto border rounded p-2">
+                    {getTeamOwnedPicks(fromTeamId).map((pick) => (
+                      <div 
+                        key={pick.pick} 
+                        onClick={() => togglePickSelection(fromTeamId, pick.pick)}
+                        className={`text-xs p-1 rounded cursor-pointer ${
+                          fromPickNumbers.includes(pick.pick) 
+                            ? 'bg-primary text-white' 
+                            : 'bg-gray-100 hover:bg-gray-200'
+                        }`}
+                      >
+                        Round {pick.round}, Pick {pick.pick}
+                      </div>
+                    ))}
+                    {getTeamOwnedPicks(fromTeamId).length === 0 && (
+                      <p className="text-xs text-gray-400 p-1">No available picks</p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            {/* To Team */}
+            <div>
+              <div className="mb-2">
+                <p className="text-sm font-medium">To Team:</p>
+                <Select 
+                  value={toTeamId?.toString() || ''}
+                  onValueChange={(value) => setToTeamId(parseInt(value))}
+                  disabled={!fromTeamId}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select team" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {teams
+                      .filter(team => team.id !== fromTeamId)
+                      .map((team) => (
+                        <SelectItem key={team.id} value={team.id.toString()}>
+                          {team.name}
+                        </SelectItem>
+                      ))
+                    }
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              {toTeamId && (
+                <div>
+                  <p className="text-xs text-gray-500 mb-1">Select picks to receive:</p>
+                  <div className="space-y-1 max-h-40 overflow-y-auto border rounded p-2">
+                    {getTeamOwnedPicks(toTeamId).map((pick) => (
+                      <div 
+                        key={pick.pick} 
+                        onClick={() => togglePickSelection(toTeamId, pick.pick)}
+                        className={`text-xs p-1 rounded cursor-pointer ${
+                          toPickNumbers.includes(pick.pick) 
+                            ? 'bg-primary text-white' 
+                            : 'bg-gray-100 hover:bg-gray-200'
+                        }`}
+                      >
+                        Round {pick.round}, Pick {pick.pick}
+                      </div>
+                    ))}
+                    {getTeamOwnedPicks(toTeamId).length === 0 && (
+                      <p className="text-xs text-gray-400 p-1">No available picks</p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+          
+          <div className="mt-4 border-t pt-4">
+            <p className="text-sm font-medium mb-2">Trade Summary:</p>
+            <div className="text-sm">
+              {fromTeamId && toTeamId ? (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="font-medium">
+                      {teams.find(t => t.id === fromTeamId)?.name} sends:
+                    </p>
+                    {fromPickNumbers.length > 0 ? (
+                      <ul className="list-disc pl-5 text-xs space-y-1">
+                        {fromPickNumbers.map(pick => {
+                          const roundInfo = getDraftBoardData().flatMap(r => r.picks).find(p => p.pick === pick);
+                          return (
+                            <li key={pick}>
+                              Round {roundInfo?.round}, Pick {pick}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    ) : (
+                      <p className="text-xs text-gray-400">No picks selected</p>
+                    )}
+                  </div>
+                  <div>
+                    <p className="font-medium">
+                      {teams.find(t => t.id === toTeamId)?.name} sends:
+                    </p>
+                    {toPickNumbers.length > 0 ? (
+                      <ul className="list-disc pl-5 text-xs space-y-1">
+                        {toPickNumbers.map(pick => {
+                          const roundInfo = getDraftBoardData().flatMap(r => r.picks).find(p => p.pick === pick);
+                          return (
+                            <li key={pick}>
+                              Round {roundInfo?.round}, Pick {pick}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    ) : (
+                      <p className="text-xs text-gray-400">No picks selected</p>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-gray-400">Select both teams to create a trade</p>
+              )}
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setIsTradeDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={executeTrade} 
+              disabled={!fromTeamId || !toTeamId || fromPickNumbers.length === 0 || toPickNumbers.length === 0}
+            >
+              Execute Trade
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
