@@ -9,6 +9,7 @@ export interface Player {
   tier: number;
   notes: string;
   order: number;
+  injuryStatus: string;
 }
 
 export interface DraftBoardItem {

@@ -1,6 +1,7 @@
+import React from 'react';
 import { useState, useRef } from 'react';
 import { Player, TIERS, TIER_COLORS, ReorderPlayerItem } from '@/lib/draftBoardTypes';
-import { GripVertical, Edit2 } from 'lucide-react';
+import { GripVertical, Edit2, Loader2 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 
@@ -147,6 +148,7 @@ export default function PlayerTable({
               <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-40">School</th>
               <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">Grade</th>
               <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">Tier</th>
+              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">Injury Status</th>
               <th scope="col" className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-20">Actions</th>
             </tr>
           </thead>
@@ -215,6 +217,7 @@ export default function PlayerTable({
                     </SelectContent>
                   </Select>
                 </td>
+                <td className="px-4 py-3 whitespace-nowrap text-sm">{player.injuryStatus}</td>
                 <td className="px-4 py-3 whitespace-nowrap text-right text-sm font-medium">
                   <button 
                     className="text-secondary hover:text-blue-900"
